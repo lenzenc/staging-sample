@@ -4,6 +4,16 @@ CRUD API for capturing a client's liabilities, which later feed a financial plan
 
 **Stack:** FastAPI, Pydantic v2, Beanie (async ODM), MongoDB 8 (docker-compose), uv.
 
+The built-in browser harness lets you poke at the API without writing a single curl command.
+
+**Seeded use cases:** click a card to see the raw API responses for that client, as the advisor and as the client.
+
+![Seeded use cases tab: scenario cards with the advisor and client responses side by side](docs/images/harness-use-cases.png)
+
+**Workbench:** create, edit and delete liabilities for any client. Pending client changes show up inline as field diffs.
+
+![Workbench tab: caller controls, create form, last response, summary and a liabilities table with pending client edits, adds and deletes](docs/images/harness-workbench.png)
+
 ## Run
 
 ```bash
@@ -38,9 +48,15 @@ See [docs/use-cases.md](docs/use-cases.md) for each use case's `GET` response as
 
 ## Test harness
 
-`harness/index.html` is a plain HTML/JS page that the API serves at http://localhost:8000/harness/ (same origin, so no CORS setup). It has:
+`harness/index.html` is a plain HTML/JS page that the API serves at http://localhost:8000/harness/ (same origin, so no CORS setup). It has two tabs, and the active one is kept in the URL hash (`#workbench` or `#scenarios`).
 
-- A **Seed data use cases** picker. Each card shows a use case's description and counts. Selecting one loads that client into the page and shows the raw JSON from `GET .../liabilities`, once as an advisor and once as the client.
+**Seeded use cases** tab:
+
+- A card for each seed use case, with its description and counts. Selecting one shows the raw JSON from `GET .../liabilities`, once as an advisor and once as the client. This does not change anything on the Workbench tab.
+- An **Open in workbench** button that loads the selected client into the Workbench tab.
+
+**Workbench** tab:
+
 - A caller switcher (advisor or client, plus user ID and client ID) that sets the `X-Caller-Type` and `X-User-Id` headers. You can also turn the headers off to check that the API returns 422.
 - A create/edit form, a filterable list and a summary panel.
 - A response panel showing the status and body of the last request.

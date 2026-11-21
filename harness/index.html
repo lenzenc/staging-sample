@@ -55,33 +55,33 @@
   .pass { color:var(--ok); } .fail { color:var(--bad); }
   .status { font-weight:600; } .full { grid-column: 1 / -1; }
   #tests li { list-style:none; margin:2px 0; } #tests { padding:0; margin:8px 0 0; }
+  .tabs { display:flex; gap:4px; align-self:stretch; align-items:end; }
+  .tab { background:transparent; color:var(--muted); border:0; border-bottom:2px solid transparent;
+         border-radius:0; padding:8px 12px; margin-bottom:-13px; }
+  .tab[aria-selected=true] { color:var(--text); border-bottom-color:var(--accent); font-weight:600; }
+  .bar { display:flex; flex-wrap:wrap; gap:12px 20px; align-items:end; }
+  [hidden] { display:none !important; }
 </style>
 </head>
 <body>
 <header>
   <h1>Liabilities API Harness</h1>
-  <label>Calling as
-    <select id="callerType"><option>advisor</option><option>client</option></select></label>
-  <label>User ID <input id="userId" value="adv-1"></label>
-  <label>Client ID <input id="clientId" value="demo-client"></label>
-  <label>Send caller headers
-    <select id="sendHeaders"><option value="yes">yes</option><option value="no">no (expect 422)</option></select></label>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" type="button" data-tab="workbench" aria-selected="true">Workbench</button>
+    <button class="tab" role="tab" type="button" data-tab="scenarios" aria-selected="false">Seeded use cases</button>
+  </div>
   <span id="health" class="tag">health: ?</span>
 </header>
 
-<main>
+<main id="tab-workbench" role="tabpanel">
   <section class="full">
-    <h2>Seed data use cases</h2>
-    <div class="row" style="margin-top:0">
-      <span style="color:var(--muted)">Pick a use case to load that client below and see the raw list response.</span>
-      <button id="reloadScenarios" class="secondary" type="button">Reload</button>
-    </div>
-    <div id="cards" class="cards" style="margin-top:8px"></div>
-    <div class="raw">
-      <div><h3>As advisor <span id="rawAdvMeta"></span> <button class="secondary" type="button" data-copy="rawAdv">Copy</button></h3>
-        <pre id="rawAdv">Select a use case.</pre></div>
-      <div><h3>As client <span id="rawCliMeta"></span> <button class="secondary" type="button" data-copy="rawCli">Copy</button></h3>
-        <pre id="rawCli">Select a use case.</pre></div>
+    <div class="bar">
+      <label>Calling as
+        <select id="callerType"><option>advisor</option><option>client</option></select></label>
+      <label>User ID <input id="userId" value="adv-1"></label>
+      <label>Client ID <input id="clientId" value="demo-client"></label>
+      <label>Send caller headers
+        <select id="sendHeaders"><option value="yes">yes</option><option value="no">no (expect 422)</option></select></label>
     </div>
   </section>
 
@@ -143,6 +143,24 @@
     <p style="margin:0; color:var(--muted)">Runs against the client ID <b>harness-auto-&lt;random&gt;</b>, so your data is untouched. Test data is deleted afterwards.</p>
     <div class="row"><button id="runTests" type="button">Run all tests</button><span id="testSummary"></span></div>
     <ul id="tests"></ul>
+  </section>
+</main>
+
+<main id="tab-scenarios" role="tabpanel" hidden>
+  <section class="full">
+    <h2>Seed data use cases</h2>
+    <div class="row" style="margin-top:0">
+      <span style="color:var(--muted)">Pick a use case to see the raw list responses for that client, as advisor and as client.</span>
+      <button id="reloadScenarios" class="secondary" type="button">Reload</button>
+      <button id="openInWorkbench" type="button" disabled>Open in workbench</button>
+    </div>
+    <div id="cards" class="cards" style="margin-top:8px"></div>
+    <div class="raw">
+      <div><h3>As advisor <span id="rawAdvMeta"></span> <button class="secondary" type="button" data-copy="rawAdv">Copy</button></h3>
+        <pre id="rawAdv">Select a use case.</pre></div>
+      <div><h3>As client <span id="rawCliMeta"></span> <button class="secondary" type="button" data-copy="rawCli">Copy</button></h3>
+        <pre id="rawCli">Select a use case.</pre></div>
+    </div>
   </section>
 </main>
 
@@ -279,7 +297,7 @@ async function refresh() {
 }
 $("refresh").onclick = refresh;
 $("filterType").onchange = refresh;
-$("clientId").onchange = () => { setEditing(null); refresh(); selectScenario($("clientId").value, false); };
+$("clientId").onchange = () => { setEditing(null); refresh(); };
 
 // ---- seed use cases ----------------------------------------------------
 let scenarios = [];
@@ -299,15 +317,34 @@ async function loadRaw(sc, role) {
   pre.textContent = text; pre.scrollTop = 0;
 }
 
-async function selectScenario(clientId, applyToInputs = true) {
+let selectedScenario = null;
+async function selectScenario(clientId) {
   const sc = scenarios.find((x) => x.client_id === clientId);
   for (const c of $("cards").children) c.classList.toggle("selected", c.dataset.client === clientId);
   if (!sc) return;
-  if (applyToInputs) { $("clientId").value = clientId; setEditing(null); refresh(); }
-  const done = Promise.all([loadRaw(sc, "advisor"), loadRaw(sc, "client")]);
-  $("rawAdv").closest(".raw").scrollIntoView({ block: "nearest", behavior: "smooth" });
-  await done;
+  selectedScenario = clientId;
+  $("openInWorkbench").disabled = false;
+  await Promise.all([loadRaw(sc, "advisor"), loadRaw(sc, "client")]);
 }
+
+$("openInWorkbench").onclick = () => {
+  if (!selectedScenario) return;
+  $("clientId").value = selectedScenario;
+  setEditing(null); refresh();
+  showTab("workbench");
+};
+
+// ---- tabs --------------------------------------------------------------
+let scenariosLoaded = false;
+function showTab(name) {
+  if (name !== "scenarios") name = "workbench";
+  for (const b of document.querySelectorAll(".tab")) b.setAttribute("aria-selected", String(b.dataset.tab === name));
+  $("tab-workbench").hidden = name !== "workbench";
+  $("tab-scenarios").hidden = name !== "scenarios";
+  if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+  if (name === "scenarios" && !scenariosLoaded) { scenariosLoaded = true; loadScenarios(); }
+}
+for (const b of document.querySelectorAll(".tab")) b.onclick = () => showTab(b.dataset.tab);
 
 async function loadScenarios() {
   const box = $("cards"); box.replaceChildren();
@@ -329,9 +366,9 @@ async function loadScenarios() {
     card.onclick = () => selectScenario(sc.client_id);
     box.append(card);
   }
-  selectScenario($("clientId").value, false);
+  if (selectedScenario) selectScenario(selectedScenario);
 }
-$("reloadScenarios").onclick = async () => { await loadScenarios(); const c = document.querySelector(".card.selected"); if (c) selectScenario(c.dataset.client, false); };
+$("reloadScenarios").onclick = loadScenarios;
 for (const b of document.querySelectorAll("[data-copy]")) {
   b.onclick = () => navigator.clipboard?.writeText($(b.dataset.copy).textContent).catch(() => {});
 }
@@ -537,7 +574,8 @@ async function runTests() {
 }
 $("runTests").onclick = runTests;
 
-checkHealth(); refresh(); loadScenarios();
+checkHealth(); refresh();
+showTab(location.hash.slice(1));
 </script>
 </body>
 </html>
