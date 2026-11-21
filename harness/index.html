@@ -1,0 +1,543 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Liabilities API Harness</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1c2128; --muted:#667085; --line:#d9dde3;
+          --accent:#2f5fd0; --ok:#1a7f4b; --bad:#c0362c; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171c; --card:#1c2128; --text:#e6e9ee; --muted:#98a2b3; --line:#30363d;
+            --accent:#6b93f0; --ok:#4cc38a; --bad:#f2766b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, sans-serif; }
+  header { padding:12px 20px; border-bottom:1px solid var(--line); background:var(--card);
+           display:flex; flex-wrap:wrap; gap:12px 20px; align-items:end; }
+  header h1 { font-size:16px; margin:0 12px 0 0; align-self:center; }
+  main { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap:16px; padding:16px 20px; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; }
+  h2 { font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:0 0 10px; }
+  label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
+  input, select, textarea, button { font:inherit; color:var(--text); background:var(--bg);
+           border:1px solid var(--line); border-radius:6px; padding:6px 8px; }
+  button { cursor:pointer; background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.secondary { background:transparent; color:var(--text); border-color:var(--line); }
+  button.danger { background:transparent; color:var(--bad); border-color:var(--bad); }
+  button:disabled { opacity:.5; cursor:default; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap:10px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  td.num { text-align:right; font-variant-numeric: tabular-nums; }
+  pre { margin:0; max-height:260px; overflow:auto; background:var(--bg); border:1px solid var(--line);
+        border-radius:6px; padding:8px; font-size:12px; white-space:pre-wrap; word-break:break-word; }
+  .pending { color:#b7791f; border-color:#b7791f; }
+  tr.pending-delete td:not(:last-child) { opacity:.55; text-decoration:line-through; }
+  tr.pending-delete .tag, tr.pending-delete .diff { text-decoration:none; }
+  .diff { font-size:12px; color:var(--muted); margin-top:3px; }
+  .diff del { color:var(--bad); } .diff ins { color:var(--ok); text-decoration:none; }
+  .tag { display:inline-block; padding:0 6px; border-radius:10px; font-size:11px; border:1px solid var(--line); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px,1fr)); gap:10px; }
+  .card { text-align:left; display:flex; flex-direction:column; gap:4px; background:var(--bg);
+          color:var(--text); border:1px solid var(--line); padding:10px; }
+  .card.selected { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent) inset; }
+  .card b { font-size:13px; } .card small { color:var(--muted); font-size:11px; }
+  .card p { margin:0; font-size:12px; color:var(--muted); }
+  .chips { display:flex; flex-wrap:wrap; gap:4px; }
+  .raw { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  @media (max-width: 900px) { .raw { grid-template-columns:1fr; } }
+  .raw pre { max-height:420px; }
+  .raw h3 { margin:0 0 4px; font-size:12px; color:var(--muted); display:flex; gap:8px; align-items:center; }
+  .pass { color:var(--ok); } .fail { color:var(--bad); }
+  .status { font-weight:600; } .full { grid-column: 1 / -1; }
+  #tests li { list-style:none; margin:2px 0; } #tests { padding:0; margin:8px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Liabilities API Harness</h1>
+  <label>Calling as
+    <select id="callerType"><option>advisor</option><option>client</option></select></label>
+  <label>User ID <input id="userId" value="adv-1"></label>
+  <label>Client ID <input id="clientId" value="demo-client"></label>
+  <label>Send caller headers
+    <select id="sendHeaders"><option value="yes">yes</option><option value="no">no (expect 422)</option></select></label>
+  <span id="health" class="tag">health: ?</span>
+</header>
+
+<main>
+  <section class="full">
+    <h2>Seed data use cases</h2>
+    <div class="row" style="margin-top:0">
+      <span style="color:var(--muted)">Pick a use case to load that client below and see the raw list response.</span>
+      <button id="reloadScenarios" class="secondary" type="button">Reload</button>
+    </div>
+    <div id="cards" class="cards" style="margin-top:8px"></div>
+    <div class="raw">
+      <div><h3>As advisor <span id="rawAdvMeta"></span> <button class="secondary" type="button" data-copy="rawAdv">Copy</button></h3>
+        <pre id="rawAdv">Select a use case.</pre></div>
+      <div><h3>As client <span id="rawCliMeta"></span> <button class="secondary" type="button" data-copy="rawCli">Copy</button></h3>
+        <pre id="rawCli">Select a use case.</pre></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 id="formTitle">Create liability</h2>
+    <form id="form">
+      <div class="grid">
+        <label>Type <select name="liability_type" required></select></label>
+        <label>Name <input name="name" required placeholder="Primary mortgage"></label>
+        <label>Lender <input name="lender"></label>
+        <label>Account last 4 <input name="account_last4" maxlength="4" placeholder="1234"></label>
+        <label>Owner <select name="owner"><option>client</option><option>spouse</option><option>joint</option></select></label>
+        <label>Current balance <input name="current_balance" required inputmode="decimal" placeholder="250000.00"></label>
+        <label>Original balance <input name="original_balance" inputmode="decimal"></label>
+        <label>Interest rate % <input name="interest_rate" inputmode="decimal"></label>
+        <label>Rate type <select name="rate_type"><option value="">-</option><option>fixed</option><option>variable</option></select></label>
+        <label>Payment amount <input name="payment_amount" inputmode="decimal"></label>
+        <label>Payment frequency <select name="payment_frequency"><option value="">-</option>
+          <option>weekly</option><option>biweekly</option><option>monthly</option><option>quarterly</option><option>annually</option></select></label>
+        <label>Origination date <input type="date" name="origination_date"></label>
+        <label>Maturity date <input type="date" name="maturity_date"></label>
+        <label>Tax deductible <select name="is_tax_deductible"><option value="false">no</option><option value="true">yes</option></select></label>
+      </div>
+      <label style="margin-top:10px">Notes <textarea name="notes" rows="2"></textarea></label>
+      <div class="row">
+        <button type="submit" id="submitBtn">Create</button>
+        <button type="button" class="secondary" id="cancelEdit" hidden>Cancel edit</button>
+        <span id="formNote" style="color:var(--muted)"></span>
+      </div>
+    </form>
+  </section>
+
+  <section>
+    <h2>Last response</h2>
+    <div><span id="respStatus" class="status">-</span> <span id="respReq" style="color:var(--muted)"></span></div>
+    <pre id="respBody" style="margin-top:8px">No request yet.</pre>
+    <h2 style="margin-top:14px">Summary</h2>
+    <pre id="summary">-</pre>
+  </section>
+
+  <section class="full">
+    <h2>Liabilities</h2>
+    <div class="row" style="margin-top:0">
+      <label>Filter type <select id="filterType"><option value="">all</option></select></label>
+      <label>Limit <input id="limit" type="number" value="50" min="1" max="200" style="width:80px"></label>
+      <button id="refresh" class="secondary" type="button">Refresh</button>
+      <span id="total" style="color:var(--muted)"></span>
+    </div>
+    <div style="overflow-x:auto; margin-top:8px">
+    <table>
+      <thead><tr><th>Name</th><th>Type</th><th>Owner</th><th class="num">Balance</th><th class="num">Rate %</th>
+        <th>Payment</th><th>Created by</th><th>Updated by</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table></div>
+  </section>
+
+  <section class="full">
+    <h2>Automated functional tests</h2>
+    <p style="margin:0; color:var(--muted)">Runs against the client ID <b>harness-auto-&lt;random&gt;</b>, so your data is untouched. Test data is deleted afterwards.</p>
+    <div class="row"><button id="runTests" type="button">Run all tests</button><span id="testSummary"></span></div>
+    <ul id="tests"></ul>
+  </section>
+</main>
+
+<script>
+const TYPES = ["mortgage","home_equity_loan","heloc","auto_loan","student_loan","credit_card",
+  "personal_loan","medical_debt","business_loan","tax_liability","other"];
+const $ = (id) => document.getElementById(id);
+const BASE = "/api/v1";
+let editingId = null;
+
+// ---- setup -------------------------------------------------------------
+for (const sel of [document.querySelector('[name=liability_type]'), $("filterType")]) {
+  for (const t of TYPES) sel.add(new Option(t, t));
+}
+$("callerType").addEventListener("change", () => {
+  $("userId").value = $("callerType").value === "advisor" ? "adv-1" : "cli-1";
+});
+
+// ---- http --------------------------------------------------------------
+function callerHeaders(over = {}) {
+  const h = {};
+  if ($("sendHeaders").value === "yes") {
+    h["X-Caller-Type"] = $("callerType").value;
+    h["X-User-Id"] = $("userId").value;
+  }
+  return { ...h, ...over };
+}
+
+// Low-level request; returns {status, data}. `show` updates the response panel.
+async function api(method, path, { body, headers, show = true } = {}) {
+  const init = { method, headers: { ...(headers ?? callerHeaders()) } };
+  if (body !== undefined) { init.body = JSON.stringify(body); init.headers["Content-Type"] = "application/json"; }
+  const res = await fetch(BASE + path, init);
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (show) {
+    $("respStatus").textContent = res.status;
+    $("respStatus").className = "status " + (res.ok ? "pass" : "fail");
+    $("respReq").textContent = `${method} ${BASE}${path}`;
+    $("respBody").textContent = data === null ? "(empty body)" : JSON.stringify(data, null, 2);
+  }
+  return { status: res.status, data };
+}
+const base = () => `/clients/${encodeURIComponent($("clientId").value)}/liabilities`;
+
+// ---- form --------------------------------------------------------------
+const NUMERIC = ["current_balance","original_balance","interest_rate","payment_amount"];
+function readForm() {
+  const out = {};
+  for (const el of $("form").elements) {
+    if (!el.name) continue;
+    let v = el.value.trim();
+    if (v === "") { if (editingId) out[el.name] = null; continue; }
+    if (el.name === "is_tax_deductible") v = v === "true";
+    out[el.name] = v;
+  }
+  if (editingId && out.current_balance === null) delete out.current_balance; // required field
+  return out;
+}
+function fillForm(item) {
+  for (const el of $("form").elements) {
+    if (!el.name) continue;
+    const v = item[el.name];
+    el.value = v === null || v === undefined ? "" : String(v);
+  }
+}
+function setEditing(item) {
+  editingId = item ? item.id : null;
+  $("formTitle").textContent = item ? `Edit liability ${item.id.slice(-6)}` : "Create liability";
+  $("submitBtn").textContent = item ? "Save changes (PATCH)" : "Create";
+  $("cancelEdit").hidden = !item;
+  if (item) fillForm(item); else $("form").reset();
+}
+$("cancelEdit").onclick = () => setEditing(null);
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = readForm();
+  const r = editingId
+    ? await api("PATCH", `${base()}/${editingId}`, { body })
+    : await api("POST", base(), { body });
+  $("formNote").textContent = r.status < 300 ? "Saved." : "Request failed - see response panel.";
+  if (r.status < 300) { setEditing(null); await refresh(); }
+});
+
+// ---- list --------------------------------------------------------------
+function cell(tr, text, cls) {
+  const td = tr.insertCell(); td.textContent = text ?? ""; if (cls) td.className = cls; return td;
+}
+const stamp = (s) => `${s.caller_type}:${s.user_id}`;
+
+async function refresh() {
+  const q = new URLSearchParams({ limit: $("limit").value || 50 });
+  if ($("filterType").value) q.set("liability_type", $("filterType").value);
+  const r = await api("GET", `${base()}?${q}`);
+  const body = $("rows"); body.replaceChildren();
+  if (r.status !== 200) { $("total").textContent = ""; $("summary").textContent = "-"; return; }
+  $("total").textContent = `${r.data.items.length} shown / ${r.data.total} total`;
+  for (const it of r.data.items) {
+    const tr = body.insertRow();
+    const nameTd = cell(tr, it.name);
+    if (it.pending_change) {
+      const pc = it.pending_change;
+      nameTd.append(" ", Object.assign(document.createElement("span"), {
+        className: "tag pending", textContent: `pending client ${LABEL[pc.action]}` }));
+      if (pc.action === "delete") tr.className = "pending-delete";
+      for (const [field, ch] of Object.entries(pc.changes)) {
+        const d = document.createElement("div"); d.className = "diff";
+        const old = document.createElement("del"); old.textContent = String(ch.current ?? "(none)");
+        const nw = document.createElement("ins"); nw.textContent = String(ch.proposed ?? "(none)");
+        d.append(`${field}: `, old, " \u2192 ", nw);
+        nameTd.append(d);
+      }
+      const by = document.createElement("div"); by.className = "diff";
+      by.textContent = `staged by ${stamp(pc.created_by)}, last edit ${stamp(pc.updated_by)}`;
+      nameTd.append(by);
+    }
+    cell(tr, it.liability_type); cell(tr, it.owner);
+    cell(tr, it.current_balance, "num"); cell(tr, it.interest_rate ?? "", "num");
+    cell(tr, it.payment_amount ? `${it.payment_amount} ${it.payment_frequency ?? ""}` : "");
+    cell(tr, stamp(it.created_by)); cell(tr, stamp(it.updated_by));
+    const act = tr.insertCell();
+    const edit = Object.assign(document.createElement("button"), { textContent: "Edit", className: "secondary" });
+    edit.onclick = () => setEditing(it);
+    const get = Object.assign(document.createElement("button"), { textContent: "GET", className: "secondary" });
+    get.onclick = () => api("GET", `${base()}/${it.id}`);
+    const del = Object.assign(document.createElement("button"), { textContent: "Delete", className: "danger" });
+    del.onclick = async () => { await api("DELETE", `${base()}/${it.id}`); if (editingId === it.id) setEditing(null); refresh(); };
+    act.append(edit, " ", get, " ", del);
+  }
+  const s = await api("GET", `${base()}/summary`, { show: false });
+  $("summary").textContent = JSON.stringify(s.data, null, 2);
+}
+$("refresh").onclick = refresh;
+$("filterType").onchange = refresh;
+$("clientId").onchange = () => { setEditing(null); refresh(); selectScenario($("clientId").value, false); };
+
+// ---- seed use cases ----------------------------------------------------
+let scenarios = [];
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
+
+async function loadRaw(sc, role) {
+  const pre = $(role === "advisor" ? "rawAdv" : "rawCli"), meta = $(role === "advisor" ? "rawAdvMeta" : "rawCliMeta");
+  const headers = role === "advisor"
+    ? { "X-Caller-Type": "advisor", "X-User-Id": "adv-1" }
+    : { "X-Caller-Type": "client", "X-User-Id": `cli-${sc.client_id}` };
+  const path = `/clients/${encodeURIComponent(sc.client_id)}/liabilities?limit=200`;
+  pre.textContent = "Loading..."; meta.textContent = `${sc.client_id} ...`;
+  const r = await api("GET", path, { headers, show: false });
+  meta.textContent = `GET ${BASE}${path} -> ${r.status} (as ${headers["X-Caller-Type"]}:${headers["X-User-Id"]})`;
+  let text = JSON.stringify(r.data, null, 2);
+  if (r.status === 200 && r.data.total === 0 && sc.counts.liabilities > 0) text += "\n\nNot seeded? Run `make seed`.";
+  pre.textContent = text; pre.scrollTop = 0;
+}
+
+async function selectScenario(clientId, applyToInputs = true) {
+  const sc = scenarios.find((x) => x.client_id === clientId);
+  for (const c of $("cards").children) c.classList.toggle("selected", c.dataset.client === clientId);
+  if (!sc) return;
+  if (applyToInputs) { $("clientId").value = clientId; setEditing(null); refresh(); }
+  const done = Promise.all([loadRaw(sc, "advisor"), loadRaw(sc, "client")]);
+  $("rawAdv").closest(".raw").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  await done;
+}
+
+async function loadScenarios() {
+  const box = $("cards"); box.replaceChildren();
+  const r = await api("GET", "/seed-scenarios", { headers: {}, show: false }).catch(() => null);
+  if (!r || r.status !== 200 || !r.data.length) { box.textContent = "No scenarios. Is the API up?"; return; }
+  scenarios = r.data;
+  for (const sc of scenarios) {
+    const chips = el("div", { className: "chips" });
+    const k = sc.counts;
+    for (const [n, label, cls] of [[k.unchanged, "unchanged", ""], [k.edits, "edit", "pending"],
+        [k.adds, "add", "pending"], [k.deletes, "delete", "pending"]]) {
+      if (n) chips.append(el("span", { className: `tag ${cls}`, textContent: `${n} ${label}${n !== 1 && label !== "unchanged" ? "s" : ""}` }));
+    }
+    if (!k.liabilities) chips.append(el("span", { className: "tag", textContent: "empty" }));
+    const card = el("button", { type: "button", className: "card" },
+      el("b", { textContent: sc.title }), el("small", { textContent: sc.client_id }),
+      el("p", { textContent: sc.description }), chips);
+    card.dataset.client = sc.client_id;
+    card.onclick = () => selectScenario(sc.client_id);
+    box.append(card);
+  }
+  selectScenario($("clientId").value, false);
+}
+$("reloadScenarios").onclick = async () => { await loadScenarios(); const c = document.querySelector(".card.selected"); if (c) selectScenario(c.dataset.client, false); };
+for (const b of document.querySelectorAll("[data-copy]")) {
+  b.onclick = () => navigator.clipboard?.writeText($(b.dataset.copy).textContent).catch(() => {});
+}
+
+async function checkHealth() {
+  try {
+    const r = await fetch("/health");
+    $("health").textContent = "health: " + (r.ok ? "ok" : r.status);
+    $("health").className = "tag " + (r.ok ? "pass" : "fail");
+  } catch { $("health").textContent = "health: down"; $("health").className = "tag fail"; }
+}
+
+// ---- automated tests ---------------------------------------------------
+const ADV = { "X-Caller-Type": "advisor", "X-User-Id": "adv-test" };
+const LABEL = { create: "add", update: "edit", delete: "delete" };
+const CLI = { "X-Caller-Type": "client", "X-User-Id": "cli-test" };
+
+async function runTests() {
+  const cid = "harness-auto-" + Math.random().toString(36).slice(2, 8);
+  const root = `/clients/${cid}/liabilities`;
+  const list = $("tests"); list.replaceChildren();
+  let passed = 0, failed = 0;
+  const t = async (name, fn) => {
+    const li = document.createElement("li");
+    try { await fn(); li.textContent = "PASS  " + name; li.className = "pass"; passed++; }
+    catch (err) { li.textContent = `FAIL  ${name} - ${err.message}`; li.className = "fail"; failed++; }
+    list.append(li);
+  };
+  const eq = (a, b, what = "value") => { if (a !== b) throw new Error(`${what}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`); };
+  const call = (m, p, body, headers = ADV) => api(m, p, { body, headers, show: false });
+  const mortgage = { liability_type: "mortgage", name: "Test mortgage", current_balance: "250000.00",
+    interest_rate: "6.5", payment_amount: "2000.00", payment_frequency: "monthly" };
+  let id;
+
+  $("runTests").disabled = true; $("testSummary").textContent = "running...";
+  try {
+    await t("POST creates liability (201) with advisor audit stamp", async () => {
+      const r = await call("POST", root, mortgage);
+      eq(r.status, 201, "status"); id = r.data.id;
+      eq(r.data.created_by.caller_type, "advisor", "created_by.caller_type");
+      eq(r.data.client_id, cid, "client_id");
+    });
+    await t("GET by id returns the record", async () => {
+      const r = await call("GET", `${root}/${id}`);
+      eq(r.status, 200, "status"); eq(r.data.name, "Test mortgage", "name");
+    });
+    await t("PATCH by advisor applies immediately and stamps updated_by", async () => {
+      const adv2 = { "X-Caller-Type": "advisor", "X-User-Id": "adv-test-2" };
+      const r = await call("PATCH", `${root}/${id}`, { current_balance: "240000.00" }, adv2);
+      eq(r.status, 200, "status"); eq(r.data.current_balance, "240000.00", "balance");
+      eq(r.data.name, "Test mortgage", "name untouched");
+      eq(r.data.created_by.user_id, "adv-test", "created_by preserved");
+      eq(r.data.updated_by.user_id, "adv-test-2", "updated_by");
+      eq(r.data.pending_change, null, "no pending change");
+    });
+    await t("List supports type filter and pagination", async () => {
+      await call("POST", root, { liability_type: "credit_card", name: "Visa", current_balance: "1500.50" });
+      await call("POST", root, { liability_type: "credit_card", name: "Amex", current_balance: "10" });
+      eq((await call("GET", root)).data.total, 3, "total");
+      eq((await call("GET", `${root}?liability_type=credit_card`)).data.total, 2, "filtered total");
+      const p = await call("GET", `${root}?limit=1&skip=1`);
+      eq(p.data.items.length, 1, "page size"); eq(p.data.total, 3, "page total");
+    });
+    await t("Summary totals are correct", async () => {
+      const s = (await call("GET", `${root}/summary`)).data;
+      eq(s.count, 3, "count"); eq(Number(s.total_current_balance), 241510.5, "total balance");
+      eq(Number(s.total_annual_payments), 24000, "annual payments");
+      eq(s.count_by_type.credit_card, 2, "credit_card count");
+    });
+    await t("Other client cannot see the record (isolation)", async () => {
+      eq((await call("GET", `/clients/${cid}-other/liabilities/${id}`)).status, 404, "status");
+    });
+    await t("Missing caller headers -> 422", async () => {
+      eq((await call("POST", root, mortgage, {})).status, 422, "status");
+    });
+    await t("Invalid caller type -> 422", async () => {
+      eq((await call("POST", root, mortgage, { "X-Caller-Type": "bogus", "X-User-Id": "x" })).status, 422, "status");
+    });
+    await t("Negative balance -> 422", async () => {
+      eq((await call("POST", root, { ...mortgage, current_balance: "-5" })).status, 422, "status");
+    });
+    await t("Bad account_last4 -> 422", async () => {
+      eq((await call("POST", root, { ...mortgage, account_last4: "12" })).status, 422, "status");
+    });
+    await t("Maturity before origination -> 422 (create and patch)", async () => {
+      const bad = { ...mortgage, origination_date: "2020-01-01", maturity_date: "2019-01-01" };
+      eq((await call("POST", root, bad)).status, 422, "create status");
+      const ok = await call("POST", root, { ...mortgage, origination_date: "2020-01-01" });
+      eq((await call("PATCH", `${root}/${ok.data.id}`, { maturity_date: "2019-01-01" })).status, 422, "patch status");
+    });
+    await t("Malformed id -> 404", async () => {
+      eq((await call("GET", `${root}/not-an-id`)).status, 404, "status");
+    });
+    let sid;
+    await t("Client PATCH is staged: advisor sees committed data + pending_change", async () => {
+      sid = (await call("POST", root, { liability_type: "credit_card", name: "Staged card",
+        current_balance: "1000.00" })).data.id;
+      const r = await call("PATCH", `${root}/${sid}`, { current_balance: "700.00" }, CLI);
+      eq(r.status, 200, "status"); eq(r.data.current_balance, "700.00", "client's own view");
+      const a = (await call("GET", `${root}/${sid}`)).data;
+      eq(a.current_balance, "1000.00", "advisor committed balance");
+      eq(a.updated_by.caller_type, "advisor", "committed updated_by untouched");
+      eq(a.pending_change.changes.current_balance.current, "1000.00", "pending current");
+      eq(a.pending_change.changes.current_balance.proposed, "700.00", "pending proposed");
+    });
+    await t("Client GET returns staged values merged with non-staged data", async () => {
+      const c = (await call("GET", `${root}/${sid}`, undefined, CLI)).data;
+      eq(c.current_balance, "700.00", "merged balance"); eq(c.name, "Staged card", "non-staged name");
+      eq("pending_change" in c, false, "client gets no change info");
+    });
+    await t("Further client PATCHes update the same staged change", async () => {
+      await call("PATCH", `${root}/${sid}`, { current_balance: "650.00", notes: "paying down" }, CLI);
+      const a = (await call("GET", `${root}/${sid}`)).data;
+      eq(a.pending_change.changes.current_balance.proposed, "650.00", "balance updated");
+      eq(a.pending_change.changes.notes.proposed, "paying down", "notes added");
+      eq(a.current_balance, "1000.00", "committed unchanged");
+    });
+    await t("Summary and list differ by caller; pending_change_count set", async () => {
+      const a = (await call("GET", `${root}/summary`)).data;
+      const c = (await call("GET", `${root}/summary`, undefined, CLI)).data;
+      eq(a.pending_change_count, 1, "advisor pending count");
+      eq(Number(a.total_current_balance) - Number(c.total_current_balance), 350, "balance delta");
+      const lc = (await call("GET", `${root}?liability_type=credit_card`, undefined, CLI)).data;
+      eq(lc.items.find((i) => i.id === sid).current_balance, "650.00", "client list merged");
+    });
+    await t("Setting a field back to its committed value un-stages it", async () => {
+      await call("PATCH", `${root}/${sid}`, { current_balance: "1000.00" }, CLI);
+      const a = (await call("GET", `${root}/${sid}`)).data;
+      eq(Object.keys(a.pending_change.changes).join(), "notes", "only notes still staged");
+    });
+    await t("Advisor PATCH applies and drops overlapping staged fields", async () => {
+      const r = await call("PATCH", `${root}/${sid}`, { notes: "advisor note" });
+      eq(r.status, 200, "status"); eq(r.data.notes, "advisor note", "applied");
+      eq(r.data.pending_change, null, "staged change cleared");
+      eq((await call("GET", `${root}/${sid}`, undefined, CLI)).data.notes, "advisor note", "client view");
+    });
+    await t("Client PATCH creating invalid dates -> 422 and nothing staged", async () => {
+      await call("PATCH", `${root}/${sid}`, { origination_date: "2020-01-01" });
+      const r = await call("PATCH", `${root}/${sid}`, { maturity_date: "2019-01-01" }, CLI);
+      eq(r.status, 422, "status");
+      eq((await call("GET", `${root}/${sid}`)).data.pending_change, null, "pending");
+    });
+    let aid, did;
+    await t("Client POST is a pending add: flagged, and not in advisor totals", async () => {
+      const before = Number((await call("GET", `${root}/summary`)).data.total_current_balance);
+      const r = await call("POST", root, { liability_type: "personal_loan", name: "Staged add",
+        current_balance: "500.00" }, CLI);
+      eq(r.status, 201, "status"); aid = r.data.id;
+      eq("pending_change" in r.data, false, "client gets no change info");
+      eq((await call("GET", `${root}/${aid}`)).data.pending_change.action, "create", "advisor flag");
+      const a = (await call("GET", `${root}/summary`)).data;
+      const c = (await call("GET", `${root}/summary`, undefined, CLI)).data;
+      eq(Number(a.total_current_balance), before, "advisor total excludes add");
+      eq(Number(c.total_current_balance), before + 500, "client total includes add");
+    });
+    await t("Client PATCH on a pending add edits the record and keeps the flag", async () => {
+      await call("PATCH", `${root}/${aid}`, { current_balance: "450.00" }, CLI);
+      const a = (await call("GET", `${root}/${aid}`)).data;
+      eq(a.current_balance, "450.00", "balance"); eq(a.pending_change.action, "create", "flag");
+    });
+    await t("Client DELETE of a pending add removes it outright", async () => {
+      eq((await call("DELETE", `${root}/${aid}`, undefined, CLI)).status, 204, "status");
+      eq((await call("GET", `${root}/${aid}`)).status, 404, "advisor get");
+    });
+    await t("Client DELETE is staged: hidden from client, flagged for advisor", async () => {
+      did = (await call("POST", root, { liability_type: "other", name: "To delete",
+        current_balance: "100.00" })).data.id;
+      eq((await call("DELETE", `${root}/${did}`, undefined, CLI)).status, 204, "status");
+      eq((await call("GET", `${root}/${did}`, undefined, CLI)).status, 404, "client get");
+      const cl = (await call("GET", root, undefined, CLI)).data.items;
+      eq(cl.some((i) => i.id === did), false, "client list hides it");
+      const a = (await call("GET", `${root}/${did}`)).data;
+      eq(a.pending_change.action, "delete", "advisor flag"); eq(a.current_balance, "100.00", "kept");
+      const s = (await call("GET", `${root}/summary`)).data;
+      eq(s.pending_by_action.delete, 1, "pending_by_action.delete");
+    });
+    await t("Advisor DELETE of a pending delete is a hard delete", async () => {
+      eq((await call("DELETE", `${root}/${did}`)).status, 204, "status");
+      eq((await call("GET", `${root}/${did}`)).status, 404, "get");
+    });
+    await t("GET without caller headers -> 422", async () => {
+      eq((await call("GET", root, undefined, {})).status, 422, "status");
+    });
+    await t("Seed scenarios endpoint lists use cases", async () => {
+      const r = await call("GET", "/seed-scenarios", undefined, {});
+      eq(r.status, 200, "status"); eq(Array.isArray(r.data) && r.data.length > 0, true, "non-empty");
+      for (const sc of r.data) {
+        eq(Boolean(sc.client_id && sc.title && sc.description && sc.counts), true, `shape of ${sc.client_id}`);
+      }
+    });
+    await t("DELETE returns 204, then GET returns 404", async () => {
+      eq((await call("DELETE", `${root}/${id}`)).status, 204, "delete status");
+      eq((await call("GET", `${root}/${id}`)).status, 404, "get status");
+    });
+  } finally {
+    // cleanup everything created under the throwaway client id
+    const rest = await call("GET", `${root}?limit=200`);
+    for (const it of rest.data?.items ?? []) await call("DELETE", `${root}/${it.id}`);
+    $("runTests").disabled = false;
+    $("testSummary").textContent = `${passed} passed, ${failed} failed`;
+    $("testSummary").className = failed ? "fail" : "pass";
+  }
+}
+$("runTests").onclick = runTests;
+
+checkHealth(); refresh(); loadScenarios();
+</script>
+</body>
+</html>

@@ -1,0 +1,620 @@
+"""Seed the dev database with sample client scenarios.
+
+Re-runnable: removes existing liabilities for the seeded client IDs first.
+Usage: make seed   (or: uv run python -m app.seed)
+"""
+
+import asyncio
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
+from app import db
+from app.config import settings
+from app.models.liability import (
+    AuditStamp,
+    CallerType,
+    Liability,
+    StagedAction,
+    StagedChange,
+)
+
+ADVISOR = ("adv-1", CallerType.advisor)
+
+
+def liability(**kw):
+    return kw
+
+
+# client_id -> (title, description, [liabilities]); the stamp user is the client's own ID
+# for items the client entered themselves, otherwise the advisor.
+SCENARIOS: dict[str, tuple[str, str, list[dict]]] = {
+    "client-young-professional": (
+        "Mixed: edits + add",
+        "Late 20s renter: student loans, car loan, card balance",
+        [
+            liability(
+                liability_type="student_loan",
+                name="Federal student loans",
+                lender="Dept. of Education",
+                original_balance="42000",
+                current_balance="31850.25",
+                interest_rate="5.05",
+                rate_type="fixed",
+                payment_amount="385.00",
+                payment_frequency="monthly",
+                origination_date="2018-09-01",
+                maturity_date="2033-09-01",
+                is_tax_deductible=True,
+                staged={"interest_rate": "4.53", "current_balance": "30100.00"},
+            ),
+            liability(
+                liability_type="auto_loan",
+                name="2022 Honda Civic",
+                lender="Capital One Auto",
+                account_last4="4471",
+                original_balance="24500",
+                current_balance="14200.00",
+                interest_rate="4.9",
+                rate_type="fixed",
+                payment_amount="465.00",
+                payment_frequency="monthly",
+                origination_date="2022-03-15",
+                maturity_date="2027-03-15",
+                by="client",
+                staged={"current_balance": "13100.00"},
+            ),
+            liability(
+                liability_type="credit_card",
+                name="Rewards Visa",
+                lender="Chase",
+                account_last4="9012",
+                current_balance="3120.40",
+                interest_rate="22.99",
+                rate_type="variable",
+                payment_amount="150.00",
+                payment_frequency="monthly",
+                notes="Carries a balance most months; candidate for payoff plan.",
+                by="client",
+                staged={"current_balance": "2400.00", "payment_amount": "400.00"},
+            ),
+            liability(
+                liability_type="personal_loan",
+                name="Affirm - laptop",
+                lender="Affirm",
+                original_balance="1380",
+                current_balance="1150.00",
+                interest_rate="15.0",
+                rate_type="fixed",
+                payment_amount="115.00",
+                payment_frequency="monthly",
+                by="client",
+                staged_action="create",
+            ),
+        ],
+    ),
+    "client-family-homeowners": (
+        "All three kinds",
+        "Married couple, two kids: mortgage, HELOC, minivan loan, closed card, ortho plan",
+        [
+            liability(
+                liability_type="mortgage",
+                name="Primary residence mortgage",
+                lender="Wells Fargo",
+                account_last4="2288",
+                owner="joint",
+                original_balance="520000",
+                current_balance="437600.00",
+                interest_rate="3.25",
+                rate_type="fixed",
+                payment_amount="2263.00",
+                payment_frequency="monthly",
+                origination_date="2020-11-01",
+                maturity_date="2050-11-01",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="heloc",
+                name="Kitchen remodel HELOC",
+                lender="Local Credit Union",
+                owner="joint",
+                original_balance="60000",
+                current_balance="38500.00",
+                interest_rate="8.75",
+                rate_type="variable",
+                payment_amount="520.00",
+                payment_frequency="monthly",
+                origination_date="2023-04-10",
+                is_tax_deductible=True,
+                staged={"current_balance": "36200.00", "interest_rate": "8.5"},
+            ),
+            liability(
+                liability_type="auto_loan",
+                name="Minivan",
+                lender="Toyota Financial",
+                owner="spouse",
+                original_balance="38000",
+                current_balance="21750.00",
+                interest_rate="3.9",
+                rate_type="fixed",
+                payment_amount="610.00",
+                payment_frequency="monthly",
+                origination_date="2022-06-01",
+                maturity_date="2028-06-01",
+                staged={"current_balance": "20900.00", "owner": "joint"},
+            ),
+            liability(
+                liability_type="credit_card",
+                name="Costco Citi Visa",
+                lender="Citi",
+                owner="joint",
+                account_last4="5530",
+                current_balance="1840.10",
+                interest_rate="19.24",
+                rate_type="variable",
+                payment_amount="1840.10",
+                payment_frequency="monthly",
+                notes="Paid in full each month.",
+                by="client",
+                # Client closed this card.
+                staged_action="delete",
+            ),
+            liability(
+                liability_type="medical_debt",
+                name="Kids' orthodontics plan",
+                lender="Smile Dental",
+                owner="joint",
+                current_balance="3200.00",
+                payment_amount="200.00",
+                payment_frequency="monthly",
+                by="client",
+                staged_action="create",
+            ),
+        ],
+    ),
+    "client-pre-retiree": (
+        "Edit + delete",
+        "Early 60s, retiring in ~3 years: low mortgage balance, a few loose ends",
+        [
+            liability(
+                liability_type="mortgage",
+                name="Primary residence mortgage",
+                lender="Bank of America",
+                owner="joint",
+                original_balance="300000",
+                current_balance="58200.00",
+                interest_rate="2.875",
+                rate_type="fixed",
+                payment_amount="1450.00",
+                payment_frequency="monthly",
+                origination_date="2012-05-01",
+                maturity_date="2027-05-01",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="personal_loan",
+                name="Daughter's wedding loan",
+                lender="SoFi",
+                original_balance="25000",
+                current_balance="9400.00",
+                interest_rate="9.5",
+                rate_type="fixed",
+                payment_amount="520.00",
+                payment_frequency="monthly",
+                origination_date="2022-08-01",
+                maturity_date="2026-12-01",
+                # Client says they're paying it off faster.
+                staged={
+                    "current_balance": "8100.00",
+                    "payment_amount": "750.00",
+                    "maturity_date": "2026-06-01",
+                },
+            ),
+            liability(
+                liability_type="tax_liability",
+                name="IRS installment agreement",
+                lender="IRS",
+                original_balance="12000",
+                current_balance="6000.00",
+                interest_rate="8.0",
+                rate_type="variable",
+                payment_amount="500.00",
+                payment_frequency="monthly",
+                notes="From 2023 capital gains underpayment.",
+                by="client",
+                staged_action="delete",  # client says it is paid off
+            ),
+        ],
+    ),
+    "client-small-business-owner": (
+        "Edit + add, cleared field",
+        "Self-employed: business and personal debt mixed, quarterly payments",
+        [
+            liability(
+                liability_type="business_loan",
+                name="SBA 7(a) loan",
+                lender="Live Oak Bank",
+                original_balance="250000",
+                current_balance="198000.00",
+                interest_rate="10.5",
+                rate_type="variable",
+                payment_amount="3300.00",
+                payment_frequency="monthly",
+                origination_date="2021-02-01",
+                maturity_date="2031-02-01",
+                notes="Personally guaranteed.",
+                is_tax_deductible=True,
+                # Includes an explicit null: the client wants the note cleared.
+                staged={"interest_rate": "9.75", "notes": None},
+            ),
+            liability(
+                liability_type="credit_card",
+                name="Amex Business Platinum",
+                lender="American Express",
+                account_last4="1007",
+                current_balance="12750.00",
+                interest_rate="21.49",
+                rate_type="variable",
+                payment_amount="1500.00",
+                payment_frequency="monthly",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="tax_liability",
+                name="Estimated federal taxes",
+                lender="IRS",
+                current_balance="9800.00",
+                payment_amount="9800.00",
+                payment_frequency="quarterly",
+                by="client",
+            ),
+            liability(
+                liability_type="mortgage",
+                name="Primary residence mortgage",
+                lender="Rocket Mortgage",
+                original_balance="410000",
+                current_balance="388000.00",
+                interest_rate="6.75",
+                rate_type="fixed",
+                payment_amount="2660.00",
+                payment_frequency="monthly",
+                origination_date="2024-01-15",
+                maturity_date="2054-01-15",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="business_loan",
+                name="Equipment lease",
+                lender="Dell Financial",
+                original_balance="18000",
+                current_balance="18000.00",
+                interest_rate="8.25",
+                rate_type="fixed",
+                payment_amount="560.00",
+                payment_frequency="monthly",
+                origination_date="2026-10-01",
+                maturity_date="2029-10-01",
+                is_tax_deductible=True,
+                by="client",
+                staged_action="create",
+            ),
+        ],
+    ),
+    "client-medical-professional": (
+        "Edit + delete, high balances",
+        "Recent physician: very high student debt, medical practice loan, rental property",
+        [
+            liability(
+                liability_type="student_loan",
+                name="Medical school loans (private)",
+                lender="Sallie Mae",
+                original_balance="280000",
+                current_balance="305400.00",
+                interest_rate="7.2",
+                rate_type="variable",
+                payment_amount="900.00",
+                payment_frequency="monthly",
+                origination_date="2016-08-01",
+                notes="In income-driven repayment; balance still growing.",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="student_loan",
+                name="Federal Grad PLUS",
+                lender="Dept. of Education",
+                original_balance="120000",
+                current_balance="131900.00",
+                interest_rate="6.28",
+                rate_type="fixed",
+                payment_amount="0.00",
+                payment_frequency="monthly",
+                notes="Forbearance during residency.",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="mortgage",
+                name="Rental property mortgage",
+                lender="Chase",
+                account_last4="7765",
+                original_balance="275000",
+                current_balance="268900.00",
+                interest_rate="7.1",
+                rate_type="fixed",
+                payment_amount="1850.00",
+                payment_frequency="monthly",
+                origination_date="2024-06-01",
+                maturity_date="2054-06-01",
+                is_tax_deductible=True,
+                # Client says the loan was refinanced and the spouse was added.
+                staged={"lender": "Wells Fargo", "owner": "joint", "interest_rate": "6.4"},
+            ),
+            liability(
+                liability_type="medical_debt",
+                name="Outstanding hospital bill",
+                lender="County Hospital",
+                current_balance="2300.00",
+                payment_amount="200.00",
+                payment_frequency="monthly",
+                by="client",
+                staged_action="delete",  # client says it was paid
+            ),
+        ],
+    ),
+    "client-no-pending": (
+        "No staged changes",
+        "Nothing staged. Advisor and client views are identical and no pending_change appears.",
+        [
+            liability(
+                liability_type="mortgage",
+                name="Primary residence mortgage",
+                lender="US Bank",
+                original_balance="350000",
+                current_balance="312000.00",
+                interest_rate="4.1",
+                rate_type="fixed",
+                payment_amount="1690.00",
+                payment_frequency="monthly",
+                origination_date="2021-07-01",
+                maturity_date="2051-07-01",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="auto_loan",
+                name="Subaru Outback",
+                lender="Subaru Motors Finance",
+                original_balance="30000",
+                current_balance="18400.00",
+                interest_rate="3.5",
+                rate_type="fixed",
+                payment_amount="540.00",
+                payment_frequency="monthly",
+            ),
+            liability(
+                liability_type="credit_card",
+                name="Everyday Mastercard",
+                lender="Citi",
+                current_balance="860.00",
+                interest_rate="20.5",
+                rate_type="variable",
+                payment_amount="860.00",
+                payment_frequency="monthly",
+                by="client",
+            ),
+        ],
+    ),
+    "client-edits-only": (
+        "Staged edits only",
+        "One untouched liability and two with staged client edits, one changing several fields.",
+        [
+            liability(
+                liability_type="auto_loan",
+                name="Ford F-150",
+                lender="Ford Credit",
+                original_balance="52000",
+                current_balance="41000.00",
+                interest_rate="5.9",
+                rate_type="fixed",
+                payment_amount="780.00",
+                payment_frequency="monthly",
+            ),
+            liability(
+                liability_type="student_loan",
+                name="Grad school loan",
+                lender="Navient",
+                original_balance="60000",
+                current_balance="47500.00",
+                interest_rate="6.8",
+                rate_type="fixed",
+                payment_amount="560.00",
+                payment_frequency="monthly",
+                staged={
+                    "current_balance": "45000.00",
+                    "interest_rate": "6.2",
+                    "payment_amount": "700.00",
+                },
+            ),
+            liability(
+                liability_type="credit_card",
+                name="Travel Amex",
+                lender="American Express",
+                current_balance="4200.00",
+                interest_rate="24.0",
+                rate_type="variable",
+                payment_amount="300.00",
+                payment_frequency="monthly",
+                by="client",
+                staged={"current_balance": "3500.00"},
+            ),
+        ],
+    ),
+    "client-adds-only": (
+        "Staged adds only, new client",
+        "A new client with nothing committed. Both liabilities are pending adds, "
+        "so advisor totals are 0 while client totals are not.",
+        [
+            liability(
+                liability_type="credit_card",
+                name="Discover It",
+                lender="Discover",
+                current_balance="2750.00",
+                interest_rate="17.9",
+                rate_type="variable",
+                payment_amount="120.00",
+                payment_frequency="monthly",
+                by="client",
+                staged_action="create",
+            ),
+            liability(
+                liability_type="personal_loan",
+                name="Debt consolidation loan",
+                lender="LendingClub",
+                original_balance="9000",
+                current_balance="8600.00",
+                interest_rate="11.2",
+                rate_type="fixed",
+                payment_amount="295.00",
+                payment_frequency="monthly",
+                by="client",
+                staged_action="create",
+            ),
+        ],
+    ),
+    "client-single-add": (
+        "Single staged add",
+        "A new client whose only liability is one pending add. The advisor sees it flagged "
+        "create with totals of 0, while the client sees it as a normal record.",
+        [
+            liability(
+                liability_type="auto_loan",
+                name="Used Toyota Corolla",
+                lender="Local Credit Union",
+                original_balance="16500",
+                current_balance="16500.00",
+                interest_rate="6.4",
+                rate_type="fixed",
+                payment_amount="325.00",
+                payment_frequency="monthly",
+                origination_date="2026-11-01",
+                maturity_date="2031-11-01",
+                by="client",
+                staged_action="create",
+            ),
+        ],
+    ),
+    "client-deletes-only": (
+        "Staged deletes only",
+        "Two untouched liabilities and one the client asked to delete. "
+        "The client list omits it, while the advisor list shows it flagged.",
+        [
+            liability(
+                liability_type="mortgage",
+                name="Condo mortgage",
+                lender="Chase",
+                original_balance="240000",
+                current_balance="201000.00",
+                interest_rate="3.9",
+                rate_type="fixed",
+                payment_amount="1130.00",
+                payment_frequency="monthly",
+                is_tax_deductible=True,
+            ),
+            liability(
+                liability_type="student_loan",
+                name="Undergrad loans",
+                lender="Nelnet",
+                original_balance="25000",
+                current_balance="7200.00",
+                interest_rate="4.5",
+                rate_type="fixed",
+                payment_amount="260.00",
+                payment_frequency="monthly",
+            ),
+            liability(
+                liability_type="personal_loan",
+                name="Furniture financing",
+                lender="Wayfair Financing",
+                original_balance="3000",
+                current_balance="0.00",
+                payment_amount="0.00",
+                payment_frequency="monthly",
+                notes="Client says this is paid off.",
+                by="client",
+                staged_action="delete",
+            ),
+        ],
+    ),
+    "client-empty": (
+        "No liabilities",
+        "A client with no liabilities, to show an empty list response.",
+        [],
+    ),
+}
+
+
+def scenario_counts(items: list[dict]) -> dict[str, int]:
+    """Counts of liabilities by staged kind for one scenario."""
+    edits = sum(1 for i in items if i.get("staged") and not i.get("staged_action"))
+    adds = sum(1 for i in items if i.get("staged_action") == "create")
+    deletes = sum(1 for i in items if i.get("staged_action") == "delete")
+    return {
+        "liabilities": len(items),
+        "unchanged": len(items) - edits - adds - deletes,
+        "edits": edits,
+        "adds": adds,
+        "deletes": deletes,
+    }
+
+
+async def seed() -> None:
+    client = await db.init_db(settings.mongodb_uri, settings.mongodb_db)
+    try:
+        await Liability.find({"client_id": {"$in": list(SCENARIOS)}}).delete()
+        now = datetime.now(UTC)
+        n = 0
+        for client_id, (_title, _desc, items) in SCENARIOS.items():
+            for i, item in enumerate(items):
+                item = dict(item)
+                staged = item.pop("staged", None)
+                action = StagedAction(item.pop("staged_action", "update"))
+                by_client = item.pop("by", None) == "client"
+                user_id, caller = (f"cli-{client_id}", CallerType.client) if by_client else ADVISOR
+                at = now - timedelta(days=30 - i)
+                stamp = AuditStamp(user_id=user_id, caller_type=caller, at=at)
+                for k in ("original_balance", "current_balance", "interest_rate", "payment_amount"):
+                    if k in item:
+                        item[k] = Decimal(item[k])
+                staged_change = None
+                if staged or action != StagedAction.update:
+                    # client's pending change: first made 3 days ago, last 2 hours ago
+                    first, last = (
+                        AuditStamp(
+                            user_id=f"cli-{client_id}", caller_type=CallerType.client, at=when
+                        )
+                        for when in (now - timedelta(days=3), now - timedelta(hours=2))
+                    )
+                    staged_change = StagedChange(
+                        action=action, changes=staged or {}, created_by=first, updated_by=last
+                    )
+                await Liability(
+                    client_id=client_id,
+                    staged=staged_change,
+                    created_at=at,
+                    updated_at=at,
+                    created_by=stamp,
+                    updated_by=stamp,
+                    **item,
+                ).insert()
+                n += 1
+        print(f"Seeded {n} liabilities for {len(SCENARIOS)} clients in '{settings.mongodb_db}':")
+        for client_id, (title, _desc, items) in SCENARIOS.items():
+            c = scenario_counts(items)
+            pending = c["edits"] + c["adds"] + c["deletes"]
+            print(
+                f"  {client_id:30} {c['liabilities']} items, {pending} pending "
+                f"({c['edits']} edits, {c['adds']} adds, {c['deletes']} deletes)  - {title}"
+            )
+    finally:
+        await client.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(seed())
