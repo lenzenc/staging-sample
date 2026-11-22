@@ -1,16 +1,13 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
+# Gradle / build output
+.gradle/
 build/
-dist/
-wheels/
-*.egg-info
+out/
 
-# Virtual environments
-.venv
+# IDEs
+.idea/
+*.iml
+.vscode/
 
 # Local env
 .env
-.pytest_cache/
-.ruff_cache/
 .playwright-mcp/

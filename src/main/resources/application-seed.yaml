@@ -1,0 +1,7 @@
+# `make seed`: load the sample scenarios and exit instead of serving requests.
+spring:
+  main:
+    web-application-type: none
+  docker:
+    compose:
+      lifecycle-management: start-only

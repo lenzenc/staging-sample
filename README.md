@@ -2,7 +2,7 @@
 
 CRUD API for capturing a client's liabilities, which later feed a financial plan. It is used by both an advisor app and a client app.
 
-**Stack:** FastAPI, Pydantic v2, Beanie (async ODM), MongoDB 8 (docker-compose), uv.
+**Stack:** Java 25, Spring Boot 4 (Spring MVC on virtual threads), Spring Data MongoDB, Bean Validation, springdoc OpenAPI, Gradle (Kotlin DSL + version catalog), MongoDB 8 (docker-compose), Testcontainers.
 
 The built-in browser harness lets you poke at the API without writing a single curl command.
 
@@ -17,18 +17,18 @@ The built-in browser harness lets you poke at the API without writing a single c
 ## Run
 
 ```bash
-make install     # uv sync + create .env
+make install     # create .env, download dependencies (needs JDK 25; Gradle comes from ./gradlew)
 make run         # starts MongoDB (docker compose) then the API on :8000
 make seed        # load 5 sample client scenarios
 make harness     # opens the browser test harness
 make fresh       # wipe Mongo (incl. its volume), restart, seed, run the API
 ```
 
-Docs: http://localhost:8000/docs. Run `make help` to list every target (`up`, `down`, `logs`, `test`, `lint`, `format`, `check`, `reset-db`, `fresh`, `clean`).
+Docs: http://localhost:8000/docs (Swagger UI; the spec is at `/openapi.json`). Run `make help` to list every target (`up`, `down`, `logs`, `test`, `lint`, `format`, `check`, `reset-db`, `fresh`, `clean`).
 
 ## Sample data
 
-`make seed` loads 11 sample clients (re-runnable; it replaces their existing records). Each one is a use case, and the harness lists them with descriptions (`GET /api/v1/seed-scenarios`).
+`make seed` loads 11 sample clients from `src/main/resources/seed/scenarios.json` (re-runnable; it replaces their existing records). Each one is a use case, and the harness lists them with descriptions (`GET /api/v1/seed-scenarios`).
 
 | Client ID | Use case | Liabilities | Staged |
 |---|---|---|---|
@@ -48,7 +48,7 @@ See [docs/use-cases.md](docs/use-cases.md) for each use case's `GET` response as
 
 ## Test harness
 
-`harness/index.html` is a plain HTML/JS page that the API serves at http://localhost:8000/harness/ (same origin, so no CORS setup). It has two tabs, and the active one is kept in the URL hash (`#workbench` or `#scenarios`).
+`src/main/resources/static/harness/index.html` is a plain HTML/JS page that the API serves at http://localhost:8000/harness/ (same origin, so no CORS setup). It has two tabs, and the active one is kept in the URL hash (`#workbench` or `#scenarios`).
 
 **Seeded use cases** tab:
 
@@ -172,7 +172,7 @@ curl -X POST localhost:8000/api/v1/clients/c1/liabilities \
 ## Develop
 
 ```bash
-make test        # pytest against the Mongo container (`liabilities_test` DB)
-make check       # ruff lint + format check + tests
-make format      # auto-fix and format
+make test        # JUnit tests; Testcontainers starts a throwaway MongoDB (Docker must be running)
+make check       # Spotless format check, compile with -Xlint, then tests
+make format      # auto-format with Spotless (palantir-java-format)
 ```
