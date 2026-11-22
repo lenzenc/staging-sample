@@ -4,6 +4,8 @@ CRUD API for capturing a client's liabilities, which later feed a financial plan
 
 **Stack:** FastAPI, Pydantic v2, Beanie (async ODM), MongoDB 8 (docker-compose), uv.
 
+**Java version:** the `java-port` branch contains a Java-based version of this application (`git checkout java-port`).
+
 The built-in browser harness lets you poke at the API without writing a single curl command.
 
 **Seeded use cases:** click a card to see the raw API responses for that client, as the advisor and as the client.
