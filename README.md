@@ -2,7 +2,9 @@
 
 CRUD API for capturing a client's liabilities, which later feed a financial plan. It is used by both an advisor app and a client app.
 
-**Stack:** FastAPI, Pydantic v2, Beanie (async ODM), MongoDB 8 (docker-compose), uv.
+**Stack:** Rust (edition 2024), axum + tokio, serde, garde (validation), utoipa (OpenAPI + Swagger UI), the official MongoDB driver, MongoDB 8 (docker-compose), Testcontainers.
+
+**Python version:** the `master` branch contains the original FastAPI / Pydantic / Beanie version (`git checkout master`).
 
 **Java version:** the `java-port` branch contains a Java-based version of this application (`git checkout java-port`).
 
@@ -19,14 +21,14 @@ The built-in browser harness lets you poke at the API without writing a single c
 ## Run
 
 ```bash
-make install     # uv sync + create .env
+make install     # cargo fetch + create .env
 make run         # starts MongoDB (docker compose) then the API on :8000
 make seed        # load 5 sample client scenarios
 make harness     # opens the browser test harness
 make fresh       # wipe Mongo (incl. its volume), restart, seed, run the API
 ```
 
-Docs: http://localhost:8000/docs. Run `make help` to list every target (`up`, `down`, `logs`, `test`, `lint`, `format`, `check`, `reset-db`, `fresh`, `clean`).
+Docs: http://localhost:8000/docs (Swagger UI; the spec is at `/openapi.json`). Run `make help` to list every target (`up`, `down`, `logs`, `test`, `lint`, `format`, `check`, `reset-db`, `fresh`, `clean`).
 
 ## Sample data
 
@@ -174,7 +176,7 @@ curl -X POST localhost:8000/api/v1/clients/c1/liabilities \
 ## Develop
 
 ```bash
-make test        # pytest against the Mongo container (`liabilities_test` DB)
-make check       # ruff lint + format check + tests
-make format      # auto-fix and format
+make test        # unit + integration tests; starts a throwaway MongoDB container (needs Docker)
+make check       # cargo fmt --check + clippy -D warnings + tests
+make format      # cargo fmt + clippy --fix
 ```
