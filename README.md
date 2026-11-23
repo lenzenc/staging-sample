@@ -6,6 +6,8 @@ CRUD API for capturing a client's liabilities, which later feed a financial plan
 
 **Java version:** the `java-port` branch contains a Java-based version of this application (`git checkout java-port`).
 
+**Rust version:** the `rust-port` branch contains a Rust-based version of this application (`git checkout rust-port`).
+
 The built-in browser harness lets you poke at the API without writing a single curl command.
 
 **Seeded use cases:** click a card to see the raw API responses for that client, as the advisor and as the client.
